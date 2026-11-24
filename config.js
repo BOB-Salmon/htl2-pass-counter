@@ -10,5 +10,7 @@ window.HTL_CONFIG = {
     { id: "202", start: "2026-12-26T09:00:00+09:00", label: "12月26日（土）・27日（日）" }
   ],
   milestones: [10, 25, 50, 100],
+  progressEvery: 180,         // 定着確認課題の提出状況を挟む間隔（秒）。0 で出さない
+  progressHold: 12,           // 提出状況を見せる長さ（秒）
   tickerMax: 12
 };

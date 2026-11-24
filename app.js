@@ -15,6 +15,8 @@
       { id: '202', start: '2026-12-26T09:00:00+09:00', label: '12月26日（土）・27日（日）' }
     ],
     milestones: [10, 25, 50, 100],
+    progressEvery: 180,
+    progressHold: 12,
     tickerMax: 12
   });
   /** @param {unknown} raw */
@@ -31,7 +33,9 @@
       phaseSwitchDate: str(c.phaseSwitchDate, DEFAULTS.phaseSwitchDate),
       exams,
       milestones,
-      tickerMax: Math.floor(num(c.tickerMax, DEFAULTS.tickerMax))
+      tickerMax: Math.floor(num(c.tickerMax, DEFAULTS.tickerMax)),
+      progressEvery: c.progressEvery === 0 ? 0 : Math.max(30, num(c.progressEvery, DEFAULTS.progressEvery)),
+      progressHold: Math.max(5, num(c.progressHold, DEFAULTS.progressHold))
     });
   };
   const CFG = readConfig(window.HTL_CONFIG);
@@ -67,15 +71,18 @@
 
   const norm = (v) => String(v ?? '').normalize('NFKC').trim();
 
-  /** "2026/12/05 10:12:03"（JST）→ epoch ms。読めなければ null */
-  const parseTime = (v) => {
-    const m = norm(v).match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  /** 日付が無い行の並び順（末尾に回す） */
+  const NO_DATE = 8e15;
+
+  /** "2026/12/05 10:12:03" / "2026/12/05"（JST）→ { t: epoch ms, timed }。読めなければ null */
+  const parseStamp = (v) => {
+    const m = norm(v).match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})(?:[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
     if (!m) return null;
-    const [, y, mo, d, h, mi, se] = m.map(Number);
-    return Date.UTC(y, mo - 1, d, h, mi, se || 0) - JST;
+    const [y, mo, d, h, mi, se] = m.slice(1).map((x) => Number(x || 0));
+    return { t: Date.UTC(y, mo - 1, d, h, mi, se) - JST, timed: m[4] !== undefined };
   };
 
-  /** ヘッダーから列位置を決める（列が抜き出されていても動く） */
+  /** フォーム回答形式：ヘッダーから列位置を決める（列が抜き出されていても動く） */
   const columnMap = (header) => {
     const find = (re) => header.findIndex((h) => re.test(norm(h)));
     const m = { time: find(/タイムスタンプ|timestamp/i), id: find(/社員番号/), exam: find(/^試験/), result: find(/結果/) };
@@ -84,19 +91,68 @@
       : { time: 0, id: 1, exam: 2, result: 3, skip: 0 };
   };
 
-  /** @typedef {{t:number,id:string,exam:'201'|'202',pass:boolean}} Rec */
-  /** @returns {Rec[]} 想定外の行は捨てる。時刻順 */
+  /** @typedef {{t:number,timed:boolean,id:string,exam:'201'|'202',pass:boolean}} Rec */
+
+  /** 受験管理表形式：「No. / 氏名 / 受験日 / 合否」のブロックが 201・202 で横に並ぶ表。該当しなければ null
+   *  氏名は人物の突き合わせにだけ使い、画面には出さない */
+  const boardRecords = (rows) => {
+    const hi = rows.findIndex((r) => r.some((c) => norm(c) === '合否'));
+    if (hi < 0) return null;
+    const head = rows[hi].map(norm);
+    const leftOf = (from, name) => { for (let c = from; c >= 0; c--) if (head[c] === name) return c; return -1; };
+    const examAbove = (col) => {
+      for (const row of rows.slice(0, hi)) {
+        for (let c = Math.min(col, row.length - 1); c >= 0; c--) {
+          const m = norm(row[c]).match(/(?:^|\D)(201|202)(?!\d)/);
+          if (m) return m[1];
+        }
+      }
+      return null;
+    };
+    const blocks = head.flatMap((h, c) => (h === '合否' ? [c] : [])).map((rc, k) => {
+      const no = leftOf(rc, 'No.');
+      return { result: rc, no, name: leftOf(rc, '氏名'), date: leftOf(rc, '受験日'), exam: examAbove(no >= 0 ? no : rc) ?? (['201', '202'][k] || null) };
+    }).filter((b) => b.exam);
+    return blocks.flatMap((b) => rows.slice(hi + 1).flatMap((r, i) => {
+      const result = norm(r[b.result]);
+      if (result !== '合格' && result !== '不合格') return [];
+      const name = b.name >= 0 ? norm(r[b.name]).replace(/\s+/g, '') : '';
+      const no = b.no >= 0 ? norm(r[b.no]) : '';
+      const id = name || (no ? '#' + no : '');
+      if (!id) return [];
+      const st = b.date >= 0 ? parseStamp(r[b.date]) : null;
+      return [{ t: st ? st.t : NO_DATE + i, timed: st ? st.timed : false, id, exam: /** @type {'201'|'202'} */ (b.exam), pass: result === '合格' }];
+    }));
+  };
+
+  /** @returns {Rec[]} 想定外の行は捨てる。時刻順（同時刻は表の行順） */
   const toRecords = (rows) => {
     if (!rows.length) return [];
+    const board = boardRecords(rows);
+    if (board) return board.sort((a, b) => a.t - b.t);
     const cm = columnMap(rows[0]);
     return rows.slice(cm.skip).flatMap((r) => {
-      const t = parseTime(r[cm.time]);
+      const st = parseStamp(r[cm.time]);
       const id = norm(r[cm.id]).toUpperCase();
       const examM = norm(r[cm.exam]).match(/^(201|202)(?!\d)/);
       const result = norm(r[cm.result]);
-      if (t === null || !id || !examM || (result !== '合格' && result !== '不合格')) return [];
-      return [{ t, id, exam: /** @type {'201'|'202'} */ (examM[1]), pass: result === '合格' }];
+      if (st === null || !id || !examM || (result !== '合格' && result !== '不合格')) return [];
+      return [{ t: st.t, timed: st.timed, id, exam: /** @type {'201'|'202'} */ (examM[1]), pass: result === '合格' }];
     }).sort((a, b) => a.t - b.t);
+  };
+
+  /** 定着確認課題：「201 phase①」などの列で、提出（◯）の人数を数える。列が無ければ null */
+  const progressOf = (rows) => {
+    const hi = rows.findIndex((r) => r.some((c) => /^(201|202)\s*phase/i.test(norm(c))));
+    if (hi < 0) return null;
+    const done = /^(?:[◯○〇●✓✔]|済|提出)/;
+    const out = { '201': [0, 0, 0, 0], '202': [0, 0, 0, 0] };
+    rows[hi].forEach((h, c) => {
+      const m = norm(h).match(/^(201|202)\s*phase\s*([1-4])/i); // NFKC で ① → 1
+      if (!m) return;
+      out[m[1]][Number(m[2]) - 1] = rows.slice(hi + 1).filter((r) => done.test(norm(r[c]))).length;
+    });
+    return out;
   };
 
   /* =================== pure: aggregation =================== */
@@ -105,8 +161,8 @@
     const exams = Object.fromEntries(EXAMS.map((ex) => {
       const r = recs.filter((x) => x.exam === ex);
       const first = new Map();
-      r.forEach((x) => { if (x.pass && !first.has(x.id)) first.set(x.id, x.t); });
-      const passes = [...first].map(([id, t]) => ({ id, t }))
+      r.forEach((x) => { if (x.pass && !first.has(x.id)) first.set(x.id, x); });
+      const passes = [...first.values()].map((x) => ({ id: x.id, t: x.t, timed: x.timed }))
         .sort((a, b) => a.t - b.t)
         .map((p, i) => ({ ...p, n: i + 1, exam: ex }));
       return [ex, { takers: new Set(r.map((x) => x.id)).size, passes }];
@@ -128,17 +184,25 @@
 
   /** 前回から増えた分を「1件ずつ」の演出列にする。合格→認定→節目の順 */
   const newEvents = (stats, seen, milestones) => {
-    const ev = [
-      ...EXAMS.flatMap((ex) => stats.exams[ex].passes.slice(seen['p' + ex]).map((p) => ({ kind: 'pass', exam: ex, n: p.n, t: p.t }))),
-      ...stats.certs.slice(seen.cert).map((c) => ({ kind: 'cert', exam: 'cert', n: c.n, t: c.t }))
-    ].sort((a, b) => a.t - b.t || (a.kind === 'pass' ? -1 : 1) - (b.kind === 'pass' ? -1 : 1));
+    const passes = EXAMS.flatMap((ex) => stats.exams[ex].passes.slice(seen['p' + ex]).map((p) => ({ kind: 'pass', exam: ex, n: p.n, t: p.t, id: p.id })))
+      .sort((a, b) => a.t - b.t);
+    const certs = stats.certs.slice(seen.cert).map((c) => ({ kind: 'cert', exam: 'cert', n: c.n, t: c.t, id: c.id }));
+    // 認定は「その人の 2 つ目の合格」の直後に置く（同じ日付の人が複数いても 合格→認定 が人ごとに続く）
+    const attached = new Map();
+    const loose = certs.filter((c) => {
+      const trig = [...passes].reverse().find((e) => e.id === c.id && e.t === c.t);
+      if (trig) { attached.set(trig, c); return false; }
+      return true;
+    });
+    const ev = [...passes, ...loose].sort((a, b) => a.t - b.t || (a.kind === 'pass' ? -1 : 1) - (b.kind === 'pass' ? -1 : 1))
+      .flatMap((e) => (attached.has(e) ? [e, attached.get(e)] : [e]));
     const out = [];
     let pend = [];
     ev.forEach((e, i) => {
       out.push(e);
       if (milestones.includes(e.n)) pend.push({ kind: 'mile', exam: e.exam, n: e.n, t: e.t });
       const next = ev[i + 1];
-      if (!(next && next.kind === 'cert' && next.t === e.t)) { out.push(...pend); pend = []; }
+      if (!(next && next.kind === 'cert' && next.id === e.id)) { out.push(...pend); pend = []; }
     });
     return out;
   };
@@ -153,7 +217,11 @@
   const pad = (n) => String(n).padStart(2, '0');
   const rate = (p, t) => (t ? Math.round((p / t) * 100) + '%' : '—');
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const fmtStamp = (t) => { const d = new Date(t + JST); return `${pad(d.getUTCMonth() + 1)}/${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`; };
+  const fmtStamp = (p) => {
+    if (p.t >= NO_DATE) return '';
+    const d = new Date(p.t + JST), md = `${pad(d.getUTCMonth() + 1)}/${pad(d.getUTCDate())}`;
+    return p.timed ? `${md} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}` : md;
+  };
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
   /* =================== storage (使えなくても動く) =================== */
@@ -184,6 +252,9 @@
     queue: [], busy: false, transitioning: false,
     landCert: 0,
     lastText: '',
+    /** PHASE 201 の間に届いた 202 合格・認定の演出（PHASE 202 に入ったら流す） */ deferred: [],
+    /** @type {null|Record<string, number[]>} 定着確認課題の提出数 */ progress: null,
+    interlude: false,
     /** @type {Rec[]} DEMO 用（メモリ上のみ。データは書き換えない） */ sim: []
   };
   const persist = () => store.save({ ...st.revealed, phaseSeen: st.phaseSeen });
@@ -212,9 +283,9 @@
     if (ph === '201') {
       const lbl = examCfg('202')?.label ?? '';
       left.className = 'flank locked';
-      left.innerHTML = flankHTML({ stamp: 'NEXT', tag: 'EXAM <b>202</b>', num: '202', jp: esc(lbl ? lbl.split('・')[0] + 'から' : '') });
+      left.innerHTML = flankHTML({ stamp: 'NEXT', tag: 'EXAM <b>202</b>', num: '202', meta: '<span class="early" id="e202" hidden>PASSED EARLY<b id="e202n">0</b></span>', jp: esc(lbl ? lbl.split('・')[0] + 'から' : '') });
       right.className = 'flank locked';
-      right.innerHTML = flankHTML({ stamp: 'LOCKED', tag: 'LPIC-2', num: '00', jp: '201 と 202 の両方に合格で認定' });
+      right.innerHTML = flankHTML({ stamp: 'LOCKED', tag: 'LPIC-2', num: '<span id="ecn">00</span>', meta: '<span class="early" id="ec" hidden>CERTIFIED EARLY</span>', jp: '201 と 202 の両方に合格で認定' });
     } else {
       left.className = 'flank final';
       left.innerHTML = flankHTML({ stamp: 'FINAL', tag: 'EXAM <b>201</b>', num: '<span class="odo" id="f201"></span>', meta: 'RATE<b id="f201r">—</b>', jp: '<span id="f201u"></span>' });
@@ -228,11 +299,12 @@
   /** 表示用モデル（純粋） */
   const viewModel = (stats, rev, ph) => {
     const shown = (ex) => stats.exams[ex].passes.slice(0, rev['p' + ex]);
-    const ticker = (ph === '201' ? ['201'] : EXAMS).flatMap(shown).sort((a, b) => b.t - a.t).slice(0, CFG.tickerMax);
+    const ticker = (ph === '201' ? ['201'] : EXAMS).flatMap(shown).sort((a, b) => b.t - a.t || b.n - a.n).slice(0, CFG.tickerMax);
     return {
       hero: { passed: rev['p' + ph], takers: stats.exams[ph].takers },
       e201: { passed: rev.p201, takers: stats.exams['201'].takers },
       cert: ph === '202' ? rev.cert : 0,
+      early: { p202: stats.exams['202'].passes.length, cert: stats.certs.length },
       ticker
     };
   };
@@ -248,7 +320,7 @@
       run.innerHTML = '<span>WAITING FOR THE FIRST PASS</span>';
       return;
     }
-    const one = items.map((p) => `<span>${fmtStamp(p.t)}　<i>EXAM ${p.exam}</i>　<b>${p.n}人目の合格</b></span>`).join('');
+    const one = items.map((p) => `<span>${fmtStamp(p) ? fmtStamp(p) + '　' : ''}<i>EXAM ${p.exam}</i>　<b>${p.n}人目の合格</b></span>`).join('');
     run.className = 'run';
     run.style.animation = 'none';
     run.innerHTML = one;
@@ -285,6 +357,12 @@
       $('#f201r').textContent = rate(vm.e201.passed, vm.e201.takers);
       $('#f201u').textContent = `合格 ${vm.e201.passed} ／ 受験報告 ${vm.e201.takers}`;
       odo($('#fc'), vm.cert, true);
+    } else {
+      $('#e202').hidden = vm.early.p202 === 0;
+      $('#e202n').textContent = String(vm.early.p202);
+      $('#ecn').textContent = pad(vm.early.cert);
+      $('#ec').hidden = vm.early.cert === 0;
+      $('#right').classList.toggle('has', vm.early.cert > 0);
     }
     const pk = ph + vm.cert + ':' + st.landCert;
     if (pk !== platesKey) { platesKey = ph + vm.cert + ':0'; renderPlates(vm.cert); }
@@ -299,6 +377,7 @@
     else { st.phase = next; render(); }
     st.phaseSeen = next;
     persist();
+    if (next === '202' && st.deferred.length) enqueue(st.deferred.splice(0));
   };
   /** 201 が左へ下がり、FINAL の刻印が入る */
   const handoff = async () => {
@@ -318,6 +397,24 @@
     stage.classList.remove('arrive');
     st.transitioning = false;
   };
+  /** 定着確認課題の提出状況：通常画面の合間に、同じ文法（金属数字＋細線）で静かに挟む */
+  const showInterlude = async () => {
+    const pr = st.progress ? st.progress[st.phase] : null;
+    if (!pr || pr.every((v) => v === 0) || st.busy || st.transitioning || st.interlude) return;
+    const stage = $('#stage');
+    st.interlude = true;
+    $('#progTag').innerHTML = `EXAM <b>${st.phase}</b> · PROGRESS`;
+    $('#progRow').innerHTML = pr.map((_, i) => `<div class="station"><div class="odo glint" id="pg${i}"></div><div class="lbl">PHASE<i>${'①②③④'[i]}</i></div></div>`).join('');
+    pr.forEach((_, i) => odo($('#pg' + i), 0));
+    stage.classList.add('interlude');
+    await wait(1200);
+    pr.forEach((v, i) => setTimeout(() => odo($('#pg' + i), v), i * 350));
+    await wait(CFG.progressHold * 1000);
+    stage.classList.remove('interlude');
+    await wait(1400);
+    st.interlude = false;
+  };
+
   const checkPhase = () => { if (!st.transitioning) setPhase(phaseFor(Date.now(), st.override)); };
 
   /* =================== video =================== */
@@ -401,7 +498,7 @@
     const it = st.queue.shift();
     if (!it) { st.busy = false; return; }
     st.busy = true;
-    if (hiddenInPhase(it)) { reveal(it); persist(); render(); nextEvent(); return; }
+    if (hiddenInPhase(it)) { st.deferred.push(it); nextEvent(); return; }
     try {
       if (it.kind === 'mile') await playMilestone(it);
       else await playClip(it);
@@ -422,14 +519,18 @@
   };
 
   /* =================== data =================== */
-  const ingest = (text, { initial = false } = {}) => {
-    const recs = [...toRecords(parseCSV(text)), ...st.sim].sort((a, b) => a.t - b.t);
+  const ingest = (text) => {
+    const rows = parseCSV(text);
+    st.progress = progressOf(rows);
+    const recs = [...toRecords(rows), ...st.sim].sort((a, b) => a.t - b.t);
     const stats = computeStats(recs);
     const now = countsOf(stats);
     st.stats = stats;
     if (st.seen === null) {
       const saved = DEMO ? null : store.load();
-      st.revealed = saved ? minCounts(saved, now) : now;
+      // 初めて開いたとき：数字は回り上がるだけ。ただし PHASE 201 中の先行 202 合格・認定は、202 に入った時の演出用に残す
+      const fresh = phaseFor(Date.now(), st.override) === '201' ? { ...now, p202: 0, cert: 0 } : now;
+      st.revealed = saved ? minCounts(saved, now) : fresh;
       st.phaseSeen = saved && typeof saved.phaseSeen === 'string' ? saved.phaseSeen : '';
       st.seen = now;
       const pending = newEvents(stats, st.revealed, CFG.milestones);
@@ -562,6 +663,10 @@
       st.revealed = { ...st.revealed, p201: st.revealed.p201 + 1 };
       reingest();
     });
+    $('#showProg').addEventListener('click', () => {
+      if (!st.progress) console.warn('[pass-counter] データに定着確認課題の列がありません');
+      showInterlude();
+    });
     $('#simMile').addEventListener('click', () => {
       const cur = st.revealed['p' + st.phase];
       const m = CFG.milestones.find((x) => x > cur) ?? CFG.milestones[0] ?? 10;
@@ -579,4 +684,5 @@
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { tickerKey = ''; render(); }).catch((e) => console.warn('[pass-counter] フォント読込待ちに失敗:', e));
   poll(); setInterval(poll, CFG.pollSeconds * 1000);
   setInterval(checkPhase, 30000);
+  if (CFG.progressEvery > 0) setInterval(showInterlude, CFG.progressEvery * 1000);
 })();

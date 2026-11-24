@@ -43,7 +43,7 @@ button{font:inherit}
 .phase b{color:var(--red);font-weight:700}
 
 /* ---------- stage ---------- */
-.stage{display:grid;grid-template-columns:1fr minmax(0,1.9fr) 1fr;align-items:center;gap:2vw}
+.stage{position:relative;display:grid;grid-template-columns:1fr minmax(0,1.9fr) 1fr;align-items:center;gap:2vw}
 .hero{display:grid;justify-items:center;text-align:center;transition:opacity 1s ease,transform 1.4s cubic-bezier(.7,0,.2,1),filter 1.2s ease}
 .eyebrow-x{font-family:var(--f-wide);font-size:clamp(14px,1vw,17px);letter-spacing:.7em;color:var(--steel);padding-left:.7em}
 .eyebrow-x b{color:var(--red);font-weight:400}
@@ -62,7 +62,7 @@ button{font:inherit}
 @keyframes gl{0%,80%{background-position:160% 0,0 0}100%{background-position:-60% 0,0 0}}
 
 /* flanks */
-.flank{display:grid;justify-items:center;text-align:center;gap:1.2vh;position:relative;transition:opacity 1.2s ease,transform 1.4s cubic-bezier(.2,.8,.2,1)}
+.flank{display:grid;justify-items:center;text-align:center;gap:1.2vh;position:relative;transition:opacity 1.2s ease,transform 1.4s cubic-bezier(.2,.8,.2,1),filter 1.2s ease}
 .flank .tag{font-family:var(--f-wide);font-size:clamp(14px,.8vw,15px);letter-spacing:.5em;color:var(--dim);padding-left:.5em;white-space:nowrap}
 .flank .tag b{color:var(--red);font-weight:400}
 .flank .num{font-family:var(--f-wide);font-size:clamp(70px,7vw,140px);line-height:1;display:flex}
@@ -76,6 +76,24 @@ button{font:inherit}
 .flank .stamp{position:absolute;top:-3.6vh;font-family:var(--f-wide);font-size:11px;letter-spacing:.4em;color:var(--steel);border:1px solid var(--faint);padding:4px 10px 4px 14px;white-space:nowrap}
 .flank.final .stamp{border-color:var(--steel)}
 .flank.cert .stamp{border-color:var(--red);color:#fff}
+
+/* early takers (PHASE 201): quiet hint only */
+.flank .early{white-space:nowrap}
+.flank.locked.has .num{-webkit-text-stroke:1px rgba(232,73,63,.55)}
+
+/* progress interlude: same grammar — metal numerals, one red hairline, wide labels */
+.prog{position:absolute;inset:0;display:grid;justify-items:center;align-content:center;text-align:center;opacity:0;pointer-events:none;transition:opacity 1.2s ease}
+.stage.interlude .prog{opacity:1}
+.stage.interlude>.hero,.stage.interlude>.flank{opacity:0;filter:blur(6px)}
+.prog-title{margin-top:1.8vh;font-family:var(--f-min);font-weight:700;font-size:clamp(16px,1.3vw,24px);letter-spacing:.4em;color:var(--soft)}
+.prog-row{width:min(72vw,1320px);display:grid;grid-template-columns:repeat(4,1fr);justify-items:center;margin-top:4.5vh}
+.station{display:grid;justify-items:center;gap:2.2vh;position:relative;width:100%}
+.station+.station::before{content:"";position:absolute;left:0;top:12%;height:58%;width:1px;background:linear-gradient(180deg,transparent,var(--faint),transparent)}
+.station .odo{font-family:var(--f-wide);font-size:clamp(64px,6vw,120px);line-height:1;filter:drop-shadow(0 14px 30px rgba(0,0,0,.6))}
+.prog .hair{width:min(72vw,1320px);margin-top:2.6vh}
+.station .lbl{font-family:var(--f-wide);font-size:14px;letter-spacing:.5em;padding-left:.5em;color:var(--dim);white-space:nowrap}
+.station .lbl i{font-style:normal;font-family:var(--f-min);font-weight:700;color:var(--red);letter-spacing:0;margin-left:.2em;font-size:1.3em}
+.prog .under{margin-top:3.4vh}
 
 /* phase 201 → 202 hand-off: 201 steps back to the left, FINAL is stamped */
 .stage.retire .hero{opacity:0;transform:translateX(-62%) scale(.42);filter:blur(2px)}
@@ -199,6 +217,11 @@ button{font:inherit}
   .right .cap::after{background:linear-gradient(90deg,var(--faint),transparent)}
   .tick{margin-top:3vh}
   #ev .h,#ev .lb,#ev.mile .h,#ev.mile .lb{width:86vw}
+  .prog-row,.prog .hair{width:92vw}
+  .prog-row{grid-template-columns:repeat(2,1fr);row-gap:4vh}
+  .station:nth-child(3)::before{display:none}
+  .station .odo{font-size:19vw}
+  .station .lbl{font-size:12px;letter-spacing:.3em}
   #ev .lb{letter-spacing:.3em}
   #ev .jp{letter-spacing:.18em}
   #ev .bars::before,#ev .bars::after{height:9vh}
