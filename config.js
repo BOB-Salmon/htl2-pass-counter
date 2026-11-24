@@ -1,7 +1,7 @@
 /* HACK THE LPIC 2 — PASS COUNTER 設定
    変更したらブラウザを再読み込みしてください。 */
 window.HTL_CONFIG = {
-  csvUrl: "",                 // 公開CSVのURL。空なら data/sample.csv を読み「SAMPLE DATA」表示
+  csvUrl: "https://docs.google.com/spreadsheets/d/1rYi9zHxIbrdFVLJvGFccNvTswAm05QeSq5rcJ9dU9CM/export?format=csv&gid=144482082",                 // 公開CSVのURL。空なら data/sample.csv を読み「SAMPLE DATA」表示
   pollSeconds: 20,
   phase: "auto",              // "auto" | "201" | "202"
   phaseSwitchDate: "2026-12-07",
