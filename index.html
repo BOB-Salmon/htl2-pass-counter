@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>HACK THE LPIC 2 — PASS COUNTER</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Michroma&family=Shippori+Mincho+B1:wght@700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="bg" id="bgA"></div><div class="bg" id="bgB"></div>
+<div class="shade"></div><div class="sweep"></div><canvas id="dust"></canvas><div class="grain"></div>
+
+<div class="screen">
+  <header>
+    <div class="top">
+      <div class="logo">HACK THE LPIC <i>2</i></div>
+      <div class="mid"><span>PASS COUNTER</span><span class="live">LIVE</span></div>
+      <div class="clock" id="clock">--:--:--</div>
+    </div>
+    <div class="phase-wrap"><div class="phase" id="phase"></div></div>
+  </header>
+
+  <main class="stage" id="stage">
+    <div class="flank" id="left"></div>
+    <div class="hero" id="hero">
+      <div class="eyebrow-x" id="heroTag"></div>
+      <div class="big"><div class="odo glint" id="heroNum"></div></div>
+      <div class="hair"></div>
+      <div class="labels"><span>PASSED</span><span>PASS RATE<b id="heroRate">—</b></span></div>
+      <div class="under" id="heroUnder"></div>
+    </div>
+    <div class="flank" id="right"></div>
+  </main>
+
+  <div class="lower">
+    <section>
+      <div class="cap" id="cdCap">COUNTDOWN</div>
+      <div class="count" id="cd"></div>
+    </section>
+    <section class="right">
+      <div class="cap">HALL OF FAME · LPIC-2 CERTIFIED</div>
+      <div class="plates" id="plates"></div>
+    </section>
+  </div>
+
+  <div class="tick" id="tick"><div class="run" id="run"></div></div>
+</div>
+
+<div class="status" id="status" hidden>更新できませんでした（再試行中）</div>
+<div class="corner"><div class="sample" id="sample" hidden>SAMPLE DATA</div><button class="sound" id="sound" type="button" aria-pressed="false">SOUND OFF</button></div>
+
+<div id="ev" aria-live="polite">
+  <video id="vPass" playsinline preload="auto" muted></video>
+  <video id="vCert" playsinline preload="auto" muted></video>
+  <div class="bars"></div>
+  <div class="card">
+    <div class="e1" id="eve"></div>
+    <div class="n"><span id="evn">00</span></div>
+    <div class="h"></div>
+    <div class="lb"><span id="evl1">PASSED</span><span id="evl2">No.00</span></div>
+    <div class="jp" id="evj"></div>
+  </div>
+</div>
+
+<button id="demoBtn" type="button" hidden>DEMO ▾</button>
+<div class="ctl" id="ctl">
+  <button data-phase="auto" type="button">PHASE AUTO</button>
+  <button data-phase="201" type="button">PHASE 201</button>
+  <button data-phase="202" type="button">PHASE 202</button>
+  <button id="simPass" type="button">SIMULATE PASS</button>
+  <button id="simCert" type="button">SIMULATE CERTIFIED</button>
+  <button id="simMile" type="button">SIMULATE MILESTONE</button>
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

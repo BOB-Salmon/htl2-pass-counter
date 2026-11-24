@@ -1,0 +1,14 @@
+/* HACK THE LPIC 2 — PASS COUNTER 設定
+   変更したらブラウザを再読み込みしてください。 */
+window.HTL_CONFIG = {
+  csvUrl: "",                 // 公開CSVのURL。空なら data/sample.csv を読み「SAMPLE DATA」表示
+  pollSeconds: 20,
+  phase: "auto",              // "auto" | "201" | "202"
+  phaseSwitchDate: "2026-12-07",
+  exams: [
+    { id: "201", start: "2026-12-05T09:00:00+09:00", label: "12月5日（土）・6日（日）" },
+    { id: "202", start: "2026-12-26T09:00:00+09:00", label: "12月26日（土）・27日（日）" }
+  ],
+  milestones: [10, 25, 50, 100],
+  tickerMax: 12
+};
